@@ -1,62 +1,59 @@
 package hello.jdbc.service;
 
 import hello.jdbc.domain.Member;
-import hello.jdbc.repository.MemberRepositoryV1;
-import hello.jdbc.repository.MemberRepositoryV2;
-import lombok.Data;
+import hello.jdbc.repository.MemberRepositoryV3;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.DefaultTransactionDefinition;
 
-import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
 
 /*
-* 트랜잭션 - 파라미터 연동, 풀을 고려한 종료
+* 트랜잭션 - 트랜잭션 매니저
 * */
 @Slf4j
 @RequiredArgsConstructor
-public class MemberServiceV2 {
+public class MemberServiceV3_1 {
 
-    private final DataSource dataSource;
-    private final MemberRepositoryV2 memberRepository;
+//    private final DataSource dataSource;
+    private final PlatformTransactionManager transactionManager;
+    private final MemberRepositoryV3 memberRepository;
 
     public void accountTransfer(String fromId, String toId, int money) throws SQLException {
-        Connection con = dataSource.getConnection(); // 하나의 트랜잭션을 같은 세션에서 동작시키기 위해
+        // 트랜잭션 시작
+        TransactionStatus status = transactionManager.getTransaction(new DefaultTransactionDefinition());
 
         try {
-            con.setAutoCommit(false); // 트랜잭션 시작
-
             // 비즈니스 로직 수행
-            bizLogic(con, fromId, toId, money);
+            bizLogic(fromId, toId, money);
 
             // 정상 수행되었다면 commit
-            con.commit();
+            transactionManager.commit(status);
 
         } catch (Exception e){
             // 예외 발생한 경우 Commit X /  rollback O
-            con.rollback();
+            transactionManager.rollback(status);
             throw new IllegalStateException(e);
-        } finally {
-            // 커넥션 close()
-            release(con);
-        }
+        }  // 트랜잭션 매니저 : 트랜잭션 종료 시 알아서 close() -> 직접 close 하지 않아도됨
     }
 
-    private void bizLogic(Connection con, String fromId, String toId, int money) throws SQLException {
+    private void bizLogic(String fromId, String toId, int money) throws SQLException {
 
         // 여기서 부터
-        Member fromMember = memberRepository.findById(con, fromId);
-        Member toMember = memberRepository.findById(con, toId);
+        Member fromMember = memberRepository.findById(fromId);
+        Member toMember = memberRepository.findById(toId);
 
         // 보내는 사람의 잔액 감소
-        memberRepository.update(con, fromMember.getMemberId(), fromMember.getMoney() - money);
+        memberRepository.update(fromMember.getMemberId(), fromMember.getMoney() - money);
 
         // 임의로 에러 케이스 발생시킴
         validation(toMember); // AutoCommit mode : 예외 발생 이후 쿼리는 실행되지 않음 (보내는 사람의 잔액만 감소)
 
         // 받는 사람의 잔액 증가
-        memberRepository.update(con, toMember.getMemberId(), toMember.getMoney() + money);
+        memberRepository.update(toMember.getMemberId(), toMember.getMoney() + money);
 
         // 여기까지가 하나의 비즈니스 로직 = 1 트랜잭션
 

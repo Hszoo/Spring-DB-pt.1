@@ -5,3 +5,4 @@ public abstract class ConnectionConst { // 연결 정보를 남은 클래스 -> 
     public static final String USERNAME = "sa";
     public static final String PASSWORD = "";
 }
+
